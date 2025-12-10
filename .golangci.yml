@@ -50,7 +50,7 @@ formatters:
       # with the given prefixes are grouped after 3rd-party packages.
       # Default: []
       local-prefixes:
-        - github.com/davidbz/calcifer
+        - github.com/davidbz/golang-template
 
     golines:
       # Target maximum line length.

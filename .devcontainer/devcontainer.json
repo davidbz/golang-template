@@ -1,6 +1,6 @@
 {
 	"$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainer.schema.json",
-	"name": "Calcifer",
+	"name": "golang-template",
 	"build": {
 		"dockerfile": "Dockerfile",
 		"context": ".."
