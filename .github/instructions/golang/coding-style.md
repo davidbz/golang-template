@@ -114,7 +114,7 @@ func GetUserStatus(ctx context.Context, user *User) UserStatus {
 
 ### Avoid Using Named Return Values
 
-Named return values can make code harder to read and understand, especially in longer functions. Use explicit returns for clarity.
+Named return values can make code harder to read and understand, especially in longer functions. Use explicit returns for clarity. This is enforced by the linter.
 
 **Do:**
 ```go
@@ -148,6 +148,74 @@ func ProcessData(ctx context.Context, data []byte) (result *Result, err error) {
 
 	return
 }
+```
+
+### Always Wrap Errors with %w
+
+When returning errors from underlying functions, always wrap them using `fmt.Errorf` with the `%w` verb. This preserves the error chain for `errors.Is` and `errors.As`.
+
+**Do:**
+```go
+func SaveUser(ctx context.Context, user *User) error {
+	if err := validateUser(user); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+	if err := db.Insert(ctx, user); err != nil {
+		return fmt.Errorf("failed to insert user: %w", err)
+	}
+
+	if err := notifyUserCreated(ctx, user); err != nil {
+		return fmt.Errorf("failed to send notification: %w", err)
+	}
+
+	return nil
+}
+```
+
+**Don't:**
+```go
+func SaveUser(ctx context.Context, user *User) error {
+	if err := validateUser(user); err != nil {
+		return err // No context about where this failed
+	}
+
+	if err := db.Insert(ctx, user); err != nil {
+		return fmt.Errorf("failed to insert user: %v", err) // Using %v instead of %w
+	}
+
+	if err := notifyUserCreated(ctx, user); err != nil {
+		return errors.New("failed to send notification") // Lost original error
+	}
+
+	return nil
+}
+```
+
+### Package Naming Should Be Specific and Meaningful
+
+Package names should clearly describe their purpose and domain. Avoid generic names like `http`, `utils`, `helpers`, `common`, or `base`.
+
+**Do:**
+```go
+// Good - specific, purpose-driven package names
+package authentication
+package telemetry
+package billing
+package inventory
+package notification
+package usermanagement
+```
+
+**Don't:**
+```go
+// Bad - generic, vague package names
+package http      // What kind of HTTP functionality?
+package utils     // Utils for what?
+package helpers   // Helpers for what?
+package common    // Common to what?
+package base      // Base of what?
+package misc      // Miscellaneous what?
 ```
 
 ### Interface Methods Should Include Context as First Argument
