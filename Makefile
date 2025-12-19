@@ -1,4 +1,4 @@
-.PHONY: build test run clean help mocks mocks-clean mocks-regen
+.PHONY: build test run clean help mocks mocks-clean mocks-regen test-coverage test-coverage-html deps fmt lint
 
 # Build the app binary
 build:
@@ -27,12 +27,17 @@ test: mocks
 	@echo "Running tests..."
 	@go test -v ./...
 
-# Run tests with coverage
+# Run tests with coverage (for CI)
 test-coverage:
 	@echo "Running tests with coverage..."
-	@go test -cover -coverprofile=coverage.out ./...
+	@go test ./... -race -covermode=atomic -coverprofile=coverage.out -timeout=5m
+	@echo "Coverage report generated: coverage.out"
+
+# Run tests with coverage and generate HTML report (for local development)
+test-coverage-html: test-coverage
+	@echo "Generating HTML coverage report..."
 	@go tool cover -html=coverage.out -o coverage.html
-	@echo "Coverage report generated: coverage.html"
+	@echo "HTML coverage report generated: coverage.html"
 
 # Run the app
 run:
@@ -65,15 +70,16 @@ lint:
 # Help
 help:
 	@echo "Available targets:"
-	@echo "  build         - Build the app binary"
-	@echo "  test          - Run all tests (generates mocks first)"
-	@echo "  test-coverage - Run tests with coverage report"
-	@echo "  run           - Run the app"
-	@echo "  clean         - Clean build artifacts"
-	@echo "  deps          - Install dependencies"
-	@echo "  fmt           - Format code"
-	@echo "  lint          - Lint code (requires golangci-lint)"
-	@echo "  mocks         - Generate mocks from interfaces"
-	@echo "  mocks-clean   - Remove generated mocks"
-	@echo "  mocks-regen   - Clean and regenerate all mocks"
-	@echo "  help          - Show this help message"
+	@echo "  build              - Build the app binary"
+	@echo "  test               - Run all tests (generates mocks first)"
+	@echo "  test-coverage      - Run tests with coverage (for CI)"
+	@echo "  test-coverage-html - Run tests with coverage and generate HTML report"
+	@echo "  run                - Run the app"
+	@echo "  clean              - Clean build artifacts"
+	@echo "  deps               - Install dependencies"
+	@echo "  fmt                - Format code"
+	@echo "  lint               - Lint code (requires golangci-lint)"
+	@echo "  mocks              - Generate mocks from interfaces"
+	@echo "  mocks-clean        - Remove generated mocks"
+	@echo "  mocks-regen        - Clean and regenerate all mocks"
+	@echo "  help               - Show this help message"

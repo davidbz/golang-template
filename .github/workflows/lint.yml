@@ -19,6 +19,16 @@ jobs:
         with:
           go-version: '1.25'
           cache: false
+
+      - name: Check code formatting
+        run: |
+          make fmt
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Code is not formatted. Please run 'make fmt' locally."
+            git diff
+            exit 1
+          fi
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
