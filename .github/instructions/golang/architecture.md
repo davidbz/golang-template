@@ -4,6 +4,126 @@ applyTo: "**/*.go"
 
 ## Go Architecture Conventions
 
+### Always Return Errors - Never Best Effort
+
+When an error occurs, always return it immediately. Do not try to continue with "best effort" approaches or silently log and ignore errors. This prevents cascading failures and makes debugging easier.
+
+**Do:**
+```go
+func CreateUserAccount(ctx context.Context, user *User) error {
+	if err := validateUser(user); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+	if err := db.SaveUser(ctx, user); err != nil {
+		return fmt.Errorf("failed to save user: %w", err)
+	}
+
+	if err := emailService.SendWelcome(ctx, user.Email); err != nil {
+		return fmt.Errorf("failed to send welcome email: %w", err)
+	}
+
+	return nil
+}
+```
+
+**Don't:**
+```go
+func CreateUserAccount(ctx context.Context, user *User) error {
+	if err := validateUser(user); err != nil {
+		log.Error("validation failed", err)
+		// DON'T: Continuing despite validation failure
+	}
+
+	if err := db.SaveUser(ctx, user); err != nil {
+		log.Error("failed to save user", err)
+		// DON'T: Pretending everything is fine
+		return nil
+	}
+
+	if err := emailService.SendWelcome(ctx, user.Email); err != nil {
+		log.Error("failed to send email", err)
+		// DON'T: Swallowing error and returning success
+	}
+
+	return nil // Lying about success!
+}
+```
+
+### Logger Should Always Come from Context
+
+Create loggers from context to ensure proper request tracing and structured logging throughout the application lifecycle.
+
+**Do:**
+```go
+func ProcessOrder(ctx context.Context, order *Order) error {
+	logger := logging.FromContext(ctx)
+
+	logger.Info("processing order", "order_id", order.ID, "user_id", order.UserID)
+
+	if err := validateOrder(order); err != nil {
+		logger.Error("validation failed", "order_id", order.ID, "error", err)
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+	if err := chargePayment(ctx, order); err != nil {
+		logger.Error("payment failed", "order_id", order.ID, "amount", order.Total, "error", err)
+		return fmt.Errorf("payment failed: %w", err)
+	}
+
+	logger.Info("order processed successfully", "order_id", order.ID)
+	return nil
+}
+```
+
+**Don't:**
+```go
+// Bad - using global logger
+var globalLogger = log.New()
+
+func ProcessOrder(ctx context.Context, order *Order) error {
+	globalLogger.Info("processing order") // No context, no structured fields
+
+	if err := validateOrder(order); err != nil {
+		globalLogger.Error(err.Error()) // Lost all context
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+	return nil
+}
+```
+
+**Key Points:**
+- Logger must be extracted from context using `logging.FromContext(ctx)`
+- Use structured logging with key-value pairs
+- Include relevant identifiers (IDs, user info, etc.) in log fields
+- Never use global loggers or create loggers outside of context
+
+### Package Organization
+
+Organize code using `cmd/` for entry points and `internal/` for application code:
+
+```
+project/
+├── cmd/
+│   ├── api/
+│   │   └── main.go          # API server entry point
+│   └── worker/
+│       └── main.go          # Background worker entry point
+├── internal/
+│   ├── domain/              # Business entities and core logic
+│   ├── handlers/            # HTTP/gRPC handlers
+│   ├── repository/          # Data access layer
+│   ├── services/            # Business services
+│   └── config/              # Configuration
+└── go.mod
+```
+
+**Key Points:**
+- `cmd/` - Contains `main.go` files for each binary
+- `internal/` - All application code (cannot be imported externally)
+- No `pkg/` directory - this template is for applications, not libraries
+
 ### Separate Logic and Data
 
 Keeping logic and data separate makes code more maintainable and testable. In Go, this often means separating into different packages.

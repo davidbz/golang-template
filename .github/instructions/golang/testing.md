@@ -6,7 +6,9 @@ applyTo: "**/*_test.go"
 
 ## Overview
 
-This guide provides instructions for generating unit tests in Golang for the Cerberus project. We use standard Go testing tools along with testify and Mockery for assertions and mocking interfaces.
+This guide provides instructions for generating unit tests in Golang. We use standard Go testing tools along with testify and Mockery for assertions and mocking interfaces.
+
+**Coverage Target: 90% or higher** - All code should have comprehensive test coverage. Use `go test -cover ./...` to measure coverage.
 
 ## Testing Framework
 
@@ -113,6 +115,76 @@ require.NoError(t, err)
 require.NotNil(t, result)
 ```
 
+## Table-Driven Tests
+
+Use table-driven tests when testing multiple scenarios for the same function. This approach reduces code duplication and makes it easy to add new test cases.
+
+**Do:**
+```go
+func TestCalculatePrice(t *testing.T) {
+	tests := []struct {
+		name           string
+		quantity       int
+		unitPrice      float64
+		discount       float64
+		expectedPrice  float64
+		expectedError  error
+	}{
+		{
+			name:          "normal purchase",
+			quantity:      5,
+			unitPrice:     10.0,
+			discount:      0.0,
+			expectedPrice: 50.0,
+			expectedError: nil,
+		},
+		{
+			name:          "with discount",
+			quantity:      10,
+			unitPrice:     20.0,
+			discount:      0.1,
+			expectedPrice: 180.0,
+			expectedError: nil,
+		},
+		{
+			name:          "zero quantity",
+			quantity:      0,
+			unitPrice:     10.0,
+			discount:      0.0,
+			expectedPrice: 0.0,
+			expectedError: ErrInvalidQuantity,
+		},
+		{
+			name:          "negative price",
+			quantity:      5,
+			unitPrice:     -10.0,
+			discount:      0.0,
+			expectedPrice: 0.0,
+			expectedError: ErrInvalidPrice,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			price, err := CalculatePrice(tt.quantity, tt.unitPrice, tt.discount)
+
+			if tt.expectedError != nil {
+				require.ErrorIs(t, err, tt.expectedError)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.expectedPrice, price)
+			}
+		})
+	}
+}
+```
+
+**Key Points:**
+- Use a slice of anonymous structs to define test cases
+- Each test case should have a descriptive `name` field
+- Use `t.Run()` to execute each test case as a subtest
+- Table-driven tests work well with subtests for organized output
+
 ## Running Tests
 
 After creating tests, always run them to verify they work correctly. Use the following command to run tests in the current package:
@@ -126,5 +198,14 @@ To run a specific test:
 ```bash
 go test -v -run TestFunctionName
 ```
+
+To check test coverage:
+
+```bash
+go test -cover ./...
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+```
+
 Make sure all tests pass before submitting your changes.
 If a test fails, debug the issue by examining the test logs and fixing either the test or the code under test as appropriate.
