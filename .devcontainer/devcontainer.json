@@ -19,9 +19,7 @@
 				"github.vscode-github-actions",
 				"ms-azuretools.vscode-docker",
 				"Anthropic.claude-code",
-				"eamodio.gitlens",
-				"usernamehw.errorlens",
-				"tamasfe.even-better-toml"
+				"eamodio.gitlens"
 			]
 		}
 	},
