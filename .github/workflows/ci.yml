@@ -29,11 +29,10 @@ jobs:
             **/go.sum
 
       - name: Build
-        run: go build ./...
+        run: make build
 
-      - name: Test
-        run: go test ./... -race -covermode=atomic -coverprofile=coverage.out -timeout=5m
-        # each individual test binary will stop after 5 minutes
+      - name: Test with Coverage
+        run: make test-coverage
 
       - name: Coverage Summary
         run: go tool cover -func=coverage.out | tail -n 1 || true

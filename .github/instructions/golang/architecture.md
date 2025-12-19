@@ -50,6 +50,102 @@ func CreateUserAccount(ctx context.Context, user *User) error {
 }
 ```
 
+### Context Usage Guidelines
+
+Context should only carry request-scoped primitive data and must never be stored in structs. Every context must have a trace ID for observability.
+
+**What to Store in Context:**
+- Trace ID (required for all contexts)
+- User ID / Username
+- Tenant ID
+- IP Address
+- Request ID
+- Authentication tokens
+
+**Never Store in Context:**
+- Large objects or structs
+- Database connections
+- Business logic data
+- Application state
+- Configuration
+
+**Do:**
+```go
+// Creating context with request-scoped data
+func HandleRequest(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Always add trace ID first
+	traceID := uuid.NewString()
+	ctx = context.WithValue(ctx, "trace_id", traceID)
+
+	// Add request-scoped primitives
+	ctx = context.WithValue(ctx, "user_id", getUserID(r))
+	ctx = context.WithValue(ctx, "tenant_id", getTenantID(r))
+	ctx = context.WithValue(ctx, "ip_address", r.RemoteAddr)
+
+	processRequest(ctx, r)
+}
+
+// For async operations, detach context to prevent timeout
+func ProcessAsync(ctx context.Context, data *Data) {
+	// Detach context - copy values but remove deadline
+	detachedCtx := context.WithoutCancel(ctx)
+
+	go func() {
+		// Use detached context so async work won't timeout
+		logger := logging.FromContext(detachedCtx)
+		logger.Info("processing async task", "trace_id", detachedCtx.Value("trace_id"))
+
+		if err := performBackgroundWork(detachedCtx, data); err != nil {
+			logger.Error("async task failed", "error", err)
+		}
+	}()
+}
+```
+
+**Don't:**
+```go
+// BAD - storing context in struct
+type UserService struct {
+	ctx  context.Context  // NEVER do this!
+	repo UserRepository
+}
+
+// BAD - storing complex objects in context
+type RequestData struct {
+	User    *User
+	Config  *Config
+	Cache   *Cache
+}
+ctx = context.WithValue(ctx, "request_data", requestData) // Don't!
+
+// BAD - using parent context in goroutine (will timeout)
+func ProcessAsync(ctx context.Context, data *Data) {
+	go func() {
+		// Using parent context - will timeout when parent request ends!
+		if err := performBackgroundWork(ctx, data); err != nil {
+			// This might fail due to context deadline exceeded
+		}
+	}()
+}
+
+// BAD - no trace ID
+func HandleRequest(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	// Missing trace ID - can't trace this request through the system
+	ctx = context.WithValue(ctx, "user_id", getUserID(r))
+	processRequest(ctx, r)
+}
+```
+
+**Key Points:**
+- Every context MUST have a trace ID as the first value added
+- Only store primitive types: strings, ints, bools
+- Never store context in struct fields - always pass as function parameter
+- Use `context.WithoutCancel()` when spawning goroutines for async work
+- Context values are for request-scoped data only, not application state
+
 ### Logger Should Always Come from Context
 
 Create loggers from context to ensure proper request tracing and structured logging throughout the application lifecycle.
