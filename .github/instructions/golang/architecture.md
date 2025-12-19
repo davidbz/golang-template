@@ -4,6 +4,160 @@ applyTo: "**/*.go"
 
 ## Go Architecture Conventions
 
+### Data-Oriented Design - Separate Logic and Data
+
+We follow data-oriented programming principles. Keep data structures simple and separate from behavior. This makes code more maintainable, testable, and easier to reason about.
+
+**Core Principles:**
+- Data structures should be simple, focused, and contain only data
+- Logic operates on data through functions, not methods on data structures
+- Prefer pure functions that transform data over stateful objects
+- Design around data flow, not object hierarchies
+- Avoid traditional OOP patterns that mix state and behavior
+
+**Do:**
+```go
+// models/user.go - Pure data structures
+package models
+
+type User struct {
+	ID        string
+	Email     string
+	Role      string
+	IsActive  bool
+	CreatedAt time.Time
+}
+
+type RolePermissions struct {
+	CanEdit   bool
+	CanDelete bool
+	CanInvite bool
+}
+
+// Static data defining the permission model
+var RoleMap = map[string]RolePermissions{
+	"admin":  {CanEdit: true, CanDelete: true, CanInvite: true},
+	"editor": {CanEdit: true, CanDelete: false, CanInvite: false},
+	"viewer": {CanEdit: false, CanDelete: false, CanInvite: false},
+}
+
+// services/user.go - Logic operates on data
+package services
+
+// GOOD - Struct contains only business logic dependencies and static config
+type UserService struct {
+	repo   UserRepository  // Business logic interface
+	auth   AuthService     // Business logic interface
+	config ServiceConfig   // Static configuration
+}
+
+func NewUserService(repo UserRepository, auth AuthService, config ServiceConfig) *UserService {
+	return &UserService{
+		repo:   repo,
+		auth:   auth,
+		config: config,
+	}
+}
+
+// Pure function operating on user data
+func (s *UserService) CreateUser(ctx context.Context, user *models.User) error {
+	if err := ValidateUser(user); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+	if err := s.repo.Save(ctx, user); err != nil {
+		return fmt.Errorf("failed to save user: %w", err)
+	}
+
+	return nil
+}
+
+// Pure function that transforms user data
+func ValidateUser(user *models.User) error {
+	if user == nil {
+		return errors.New("user is nil")
+	}
+	if user.Email == "" {
+		return errors.New("email is required")
+	}
+	if !isValidEmail(user.Email) {
+		return errors.New("invalid email format")
+	}
+	return nil
+}
+```
+
+**Don't:**
+```go
+// BAD - Mixing data, state, and dependencies
+type User struct {
+	ID       string
+	Email    string
+	Role     string
+	IsActive bool
+
+	// BAD - embedding technical dependencies in data structure
+	db     *sql.DB
+	cache  Cache
+	logger Logger
+}
+
+// BAD - Data structure with complex behavior and hidden dependencies
+func (u *User) Save() error {
+	// Hidden dependency on database
+	return u.db.Insert(u)
+}
+
+func (u *User) HasPermission(action string) bool {
+	// Complex logic embedded in data structure
+	if u.Role == "admin" {
+		return true
+	}
+	// More logic...
+	return false
+}
+
+// BAD - Service with mutable state
+type UserService struct {
+	repo        UserRepository
+	currentUser *User           // State - DON'T store request data
+	lastError   error          // State - DON'T accumulate state
+	cache       map[string]any // Mutable state - DON'T
+	requestID   string         // Request data - DON'T (use context)
+}
+
+// BAD - Stateful object that changes during use
+func (s *UserService) SetCurrentUser(user *User) {
+	s.currentUser = user // Mutating state - BAD!
+}
+
+func (s *UserService) Process() error {
+	// Operating on stored state instead of parameters
+	return s.repo.Save(s.currentUser)
+}
+```
+
+**Quick Check for Good Struct Design:**
+
+Look at your struct members. If all members are either:
+1. **Business logic interfaces** (Repository, Service, etc.), OR
+2. **Static configuration** structs loaded at startup
+
+...then you're on the right track!
+
+If you see any of these, refactor:
+- ❌ Data that changes during request processing
+- ❌ Caches, counters, or accumulated state
+- ❌ Request-scoped data (use context instead)
+- ❌ Embedded technical clients (db connections, HTTP clients)
+
+**Key Points:**
+- Keep data structures in `models/` or `domain/` packages with only fields
+- Business logic goes in `services/` as functions operating on data
+- Services contain dependencies (interfaces) and static config only - zero mutable state
+- Think about data transformation pipelines, not object interactions
+- Pass data as function parameters, don't store it in structs
+
 ### Always Return Errors - Never Best Effort
 
 When an error occurs, always return it immediately. Do not try to continue with "best effort" approaches or silently log and ignore errors. This prevents cascading failures and makes debugging easier.
@@ -219,67 +373,6 @@ project/
 - `cmd/` - Contains `main.go` files for each binary
 - `internal/` - All application code (cannot be imported externally)
 - No `pkg/` directory - this template is for applications, not libraries
-
-### Separate Logic and Data
-
-Keeping logic and data separate makes code more maintainable and testable. In Go, this often means separating into different packages.
-
-**Do:**
-```go
-// models/roles.go
-package models
-
-// RolePermissions defines what actions a role can perform
-type RolePermissions struct {
-	CanEdit   bool
-	CanDelete bool
-	CanInvite bool
-}
-
-// RoleMap defines available roles and their permissions
-var RoleMap = map[string]RolePermissions{
-	"admin":  {CanEdit: true, CanDelete: true, CanInvite: true},
-	"editor": {CanEdit: true, CanDelete: false, CanInvite: false},
-	"viewer": {CanEdit: false, CanDelete: false, CanInvite: false},
-}
-
-// services/permissions.go
-package services
-
-import (
-	"context"
-	"myapp/models"
-)
-
-// PermissionChecker handles permission verification
-type PermissionChecker struct {
-	// Dependencies injected via constructor
-}
-
-// CheckPermission verifies if a user can perform an action
-func (p *PermissionChecker) CheckPermission(ctx context.Context, user *models.User, action string) bool {
-	if user == nil || user.Role == "" {
-		return false
-	}
-
-	permissions, exists := models.RoleMap[user.Role]
-	if !exists {
-		// Default to viewer permissions if role not found
-		permissions = models.RoleMap["viewer"]
-	}
-
-	switch action {
-	case "edit":
-		return permissions.CanEdit
-	case "delete":
-		return permissions.CanDelete
-	case "invite":
-		return permissions.CanInvite
-	default:
-		return false
-	}
-}
-```
 
 ### Avoid Technology Names in Main Business Flow
 
