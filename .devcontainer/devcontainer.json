@@ -28,5 +28,9 @@
 		"GOBIN": "/home/vscode/go/bin"
 	},
 	"postCreateCommand": "go mod tidy",
+	"mounts": [
+		"source=code-bashhistory,target=/commandhistory,type=volume",
+		"source=claude-code-config,target=/home/vscode/.claude,type=volume"
+	],
 	"remoteUser": "vscode"
 }
