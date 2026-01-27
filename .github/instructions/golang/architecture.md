@@ -204,6 +204,12 @@ func CreateUserAccount(ctx context.Context, user *User) error {
 }
 ```
 
+### Don't Panic!
+Don’t use panic for normal error handling. Use error and multiple return values.
+panic should be reserved for truly exceptional cases, or conditions that should be impossible. Things like: reaching the end of an infinite loop, or attempting to divide by zero.
+
+When deciding “Should I return an error, or panic?” you should almost always prefer returning an error.
+
 ### Context Usage Guidelines
 
 Context should only carry request-scoped primitive data and must never be stored in structs. Every context must have a trace ID for observability.
