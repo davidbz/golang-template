@@ -16,6 +16,8 @@ RUN mkdir -p /home/vscode/go/bin && \
 ARG GOLANGCI_LINT_VERSION=latest
 RUN su vscode -c "curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /home/vscode/go/bin ${GOLANGCI_LINT_VERSION}"
 
+ARG USERNAME=vscode
+
 # Install Go development tools as vscode user
 RUN su vscode -c "go install golang.org/x/tools/gopls@latest" && \
     su vscode -c "go install github.com/go-delve/delve/cmd/dlv@latest" && \
@@ -49,6 +51,11 @@ RUN su vscode -c "curl -fsSL https://claude.ai/install.sh | bash"
 # Set up bash completion for Go tools
 RUN echo 'source /usr/share/bash-completion/bash_completion' >> /home/vscode/.bashrc
 
+# Persist bash history.
+RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.bash_history" \
+    && mkdir /commandhistory \
+    && touch /commandhistory/.bash_history \
+    && chown -R $USERNAME /commandhistory
+
 # Clean up
 RUN rm -rf /tmp/*
-
