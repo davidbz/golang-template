@@ -34,11 +34,17 @@ type RolePermissions struct {
 	CanInvite bool
 }
 
-// Static data defining the permission model
-var RoleMap = map[string]RolePermissions{
-	"admin":  {CanEdit: true, CanDelete: true, CanInvite: true},
-	"editor": {CanEdit: true, CanDelete: false, CanInvite: false},
-	"viewer": {CanEdit: false, CanDelete: false, CanInvite: false},
+// Static data defining the permission model.
+// A pure function instead of a package-level map: no globals (gochecknoglobals), nothing to mutate.
+func PermissionsFor(role string) RolePermissions {
+	switch role {
+	case "admin":
+		return RolePermissions{CanEdit: true, CanDelete: true, CanInvite: true}
+	case "editor":
+		return RolePermissions{CanEdit: true, CanDelete: false, CanInvite: false}
+	default:
+		return RolePermissions{CanEdit: false, CanDelete: false, CanInvite: false}
+	}
 }
 
 // services/user.go - Logic operates on data
@@ -229,22 +235,45 @@ Context should only carry request-scoped primitive data and must never be stored
 - Application state
 - Configuration
 
+Context keys must be unexported, typed keys (never plain strings - see staticcheck SA1029 / revive
+`context-keys-type`). Expose small typed accessors from the package that owns the key:
+
 **Do:**
 ```go
+// internal/requestctx/requestctx.go
+package requestctx
+
+type key int
+
+const (
+	traceIDKey key = iota
+	userIDKey
+	tenantIDKey
+	ipAddressKey
+)
+
+func WithTraceID(ctx context.Context, traceID string) context.Context {
+	return context.WithValue(ctx, traceIDKey, traceID)
+}
+
+func TraceID(ctx context.Context) string {
+	traceID, _ := ctx.Value(traceIDKey).(string)
+	return traceID
+}
+
+// WithUserID, WithTenantID, WithIPAddress follow the same pattern.
+
 // Creating context with request-scoped data
 func HandleRequest(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
 	// Always add trace ID first
-	traceID := uuid.NewString()
-	ctx = context.WithValue(ctx, "trace_id", traceID)
+	ctx := requestctx.WithTraceID(r.Context(), uuid.NewString())
 
 	// Add request-scoped primitives
-	ctx = context.WithValue(ctx, "user_id", getUserID(r))
-	ctx = context.WithValue(ctx, "tenant_id", getTenantID(r))
-	ctx = context.WithValue(ctx, "ip_address", r.RemoteAddr)
+	ctx = requestctx.WithUserID(ctx, getUserID(r))
+	ctx = requestctx.WithTenantID(ctx, getTenantID(r))
+	ctx = requestctx.WithIPAddress(ctx, r.RemoteAddr)
 
-	processRequest(ctx, r)
+	processRequest(ctx, w, r)
 }
 
 // For async operations, detach context to prevent timeout
@@ -253,12 +282,14 @@ func ProcessAsync(ctx context.Context, data *Data) {
 	detachedCtx := context.WithoutCancel(ctx)
 
 	go func() {
-		// Use detached context so async work won't timeout
+		// Use detached context so async work won't timeout.
+		// The logger from context already carries the trace ID.
 		logger := logging.FromContext(detachedCtx)
-		logger.Info("processing async task", "trace_id", detachedCtx.Value("trace_id"))
+		logger.InfoContext(detachedCtx, "processing async task")
 
 		if err := performBackgroundWork(detachedCtx, data); err != nil {
-			logger.Error("async task failed", "error", err)
+			// The goroutine has no caller to return to: logging is the only option here.
+			logger.ErrorContext(detachedCtx, "async task failed", "error", err)
 		}
 	}()
 }
@@ -315,19 +346,17 @@ Create loggers from context to ensure proper request tracing and structured logg
 func ProcessOrder(ctx context.Context, order *Order) error {
 	logger := logging.FromContext(ctx)
 
-	logger.Info("processing order", "order_id", order.ID, "user_id", order.UserID)
+	logger.InfoContext(ctx, "processing order", "order_id", order.ID, "user_id", order.UserID)
 
 	if err := validateOrder(order); err != nil {
-		logger.Error("validation failed", "order_id", order.ID, "error", err)
 		return fmt.Errorf("validation failed: %w", err)
 	}
 
 	if err := chargePayment(ctx, order); err != nil {
-		logger.Error("payment failed", "order_id", order.ID, "amount", order.Total, "error", err)
-		return fmt.Errorf("payment failed: %w", err)
+		return fmt.Errorf("payment failed for order %s: %w", order.ID, err)
 	}
 
-	logger.Info("order processed successfully", "order_id", order.ID)
+	logger.InfoContext(ctx, "order processed successfully", "order_id", order.ID)
 	return nil
 }
 ```
@@ -351,6 +380,9 @@ func ProcessOrder(ctx context.Context, order *Order) error {
 
 **Key Points:**
 - Logger must be extracted from context using `logging.FromContext(ctx)`
+- Use the `*Context` methods (`InfoContext`, `ErrorContext`, ...) whenever a ctx is in scope (enforced by sloglint)
+- Log messages are static strings; variable data goes in snake_case key-value pairs (enforced by sloglint)
+- Don't log an error *and* return it - return it wrapped, and let the top-level handler log it once
 - Use structured logging with key-value pairs
 - Include relevant identifiers (IDs, user info, etc.) in log fields
 - Never use global loggers or create loggers outside of context
@@ -390,23 +422,26 @@ If you spot technology names or specific component names in your main business f
 func ProcessUserRegistration(ctx context.Context, userData UserRegistrationData) error {
 	// Validate user data
 	if err := validateRegistrationData(userData); err != nil {
-		return err
+		return fmt.Errorf("invalid registration data: %w", err)
 	}
 
 	// Create user account
 	user, err := createUserAccount(ctx, userData)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create user account: %w", err)
 	}
 
 	// Send welcome notification
 	if err := sendWelcomeMessage(ctx, user); err != nil {
-		// Log error but don't fail the registration
-		log.Error("failed to send welcome message", "user_id", user.ID, "error", err)
+		return fmt.Errorf("failed to send welcome message: %w", err)
 	}
 
 	// Provision access
-	return provisionUserAccess(ctx, user)
+	if err := provisionUserAccess(ctx, user); err != nil {
+		return fmt.Errorf("failed to provision access: %w", err)
+	}
+
+	return nil
 }
 
 // Technology-specific implementations are abstracted away
@@ -458,7 +493,13 @@ Separate core business logic from technical integrations like SailPoint. Use the
 // domain/user_service.go
 package domain
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
+
+// EventUserCreated is published after a user is persisted.
+const EventUserCreated = "user.created"
 
 // UserService handles core user business logic
 type UserService struct {
@@ -476,16 +517,18 @@ func NewUserService(repo UserRepository, publisher EventPublisher) *UserService 
 func (s *UserService) CreateUser(ctx context.Context, user *User) error {
 	// Core business logic
 	if err := validateUser(user); err != nil {
-		return err
+		return fmt.Errorf("invalid user: %w", err)
 	}
 
 	// Save to database
 	if err := s.repo.Save(ctx, user); err != nil {
-		return err
+		return fmt.Errorf("failed to save user: %w", err)
 	}
 
 	// Publish event for observers (like SailPoint) to react to
-	s.eventPublisher.Publish(ctx, "user.created", user)
+	if err := s.eventPublisher.Publish(ctx, EventUserCreated, user); err != nil {
+		return fmt.Errorf("failed to publish %s: %w", EventUserCreated, err)
+	}
 
 	return nil
 }
@@ -493,22 +536,33 @@ func (s *UserService) CreateUser(ctx context.Context, user *User) error {
 // integrations/sailpoint/observer.go
 package sailpoint
 
-import "context"
+import (
+	"context"
+	"fmt"
+
+	"github.com/davidbz/golang-template/internal/domain"
+)
 
 // SailPointObserver implements the Observer interface
 type SailPointObserver struct {
 	client SailPointClient
 }
 
-func (o *SailPointObserver) OnEvent(ctx context.Context, eventType string, data interface{}) {
-	switch eventType {
-	case "user.created":
-		user, ok := data.(*User)
-		if ok {
-			o.client.SyncUser(ctx, user)
-		}
-	// Handle other events
+func (o *SailPointObserver) OnEvent(ctx context.Context, eventType string, data any) error {
+	if eventType != domain.EventUserCreated {
+		return nil // not interested in other events
 	}
+
+	user, ok := data.(*domain.User)
+	if !ok {
+		return fmt.Errorf("unexpected payload %T for %s", data, eventType)
+	}
+
+	if err := o.client.SyncUser(ctx, user); err != nil {
+		return fmt.Errorf("failed to sync user to SailPoint: %w", err)
+	}
+
+	return nil
 }
 ```
 
@@ -536,32 +590,40 @@ func NewUserController(userService UserService, authService AuthService) *UserCo
 }
 
 // In main.go or setup.go
-func BuildContainer() *dig.Container {
+func BuildContainer() (*dig.Container, error) {
 	container := dig.New()
 
-	// Register dependencies
-	container.Provide(initDatabase)
-	container.Provide(NewEventBus)
-	container.Provide(NewSQLUserRepository)
-	container.Provide(NewAuthService)
-	container.Provide(NewUserService)
-	container.Provide(NewUserController)
+	// Register dependencies - Provide fails on duplicate or invalid constructors, so check every call.
+	constructors := []any{
+		initDatabase,
+		NewEventBus,
+		NewSQLUserRepository,
+		NewAuthService,
+		NewUserService,
+		NewUserController,
+	}
+	for _, constructor := range constructors {
+		if err := container.Provide(constructor); err != nil {
+			return nil, fmt.Errorf("failed to register constructor: %w", err)
+		}
+	}
 
-	return container
+	return container, nil
 }
 
-func StartApp() {
-	container := BuildContainer()
+// cmd/<app>/main.go - the composition root is the only place allowed to give up.
+func main() {
+	container, err := BuildContainer()
+	if err != nil {
+		log.Fatalf("failed to build container: %v", err)
+	}
 
 	// Invoke the application entry point
-	err := container.Invoke(func(controller *UserController) {
-		// Start using the controller
-		server := NewServer(controller)
-		server.Start()
+	err = container.Invoke(func(controller *UserController) error {
+		return NewServer(controller).Start()
 	})
-
 	if err != nil {
-		panic(err)
+		log.Fatalf("application stopped: %v", err)
 	}
 }
 ```
@@ -594,20 +656,31 @@ type DepConfig struct {
 	*AuthConfig
 }
 
-func Load() *Config {
+func Load() (*Config, error) {
 	for _, file := range []string{".env", ".env.defaults", ".env.secrets"} {
-		_ = godotenv.Load(file)
+		// Env files are optional, but a file that exists and can't be read is an error.
+		if err := godotenv.Load(file); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("failed to load %s: %w", file, err)
+		}
 	}
+
 	var cfg Config
-	env.Parse(&cfg)
-	return &cfg
+	if err := env.Parse(&cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse config from environment: %w", err)
+	}
+
+	return &cfg, nil
 }
 
 func ParseDependenciesConfig(cfg *Config) DepConfig {
-	return DepConfig{dig.Out{}, &cfg.Server, &cfg.Auth}
+	return DepConfig{
+		Out:          dig.Out{},
+		ServerConfig: &cfg.Server,
+		AuthConfig:   &cfg.Auth,
+	}
 }
 
-// main.go
+// main.go (check each Provide error as shown above)
 container.Provide(config.Load)
 container.Provide(config.ParseDependenciesConfig)
 container.Provide(func(cfg *config.AuthConfig) *auth.Service {

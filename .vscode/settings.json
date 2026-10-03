@@ -14,11 +14,18 @@
     "go.lintTool": "golangci-lint",
     "go.lintOnSave": "workspace",
     "go.lintFlags": [
+        "--path-mode=abs",
         "--fast-only"
     ],
     "go.vetOnSave": "off",
-    "go.formatTool": "goimports",
-    "go.formatFlags": [],
+    "go.formatTool": "custom",
+    "go.alternateTools": {
+        "customFormatter": "golangci-lint"
+    },
+    "go.formatFlags": [
+        "fmt",
+        "--stdin"
+    ],
     "go.testOnSave": false,
     "go.coverOnSave": false,
     "go.coverageDecorator": {
@@ -42,11 +49,12 @@
         "ui.completion.usePlaceholders": true,
         "ui.diagnostic.analyses": {
             "unusedparams": true,
-            "shadow": true,
+            "shadow": false,
             "nilness": true,
             "unusedwrite": true
         },
-        "formatting.gofumpt": true
+        "formatting.gofumpt": true,
+        "formatting.local": "github.com/davidbz/golang-template"
     },
     "remote.localPortHost": "allInterfaces",
     "remote.autoForwardPortsFallback": 0,

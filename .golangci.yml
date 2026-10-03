@@ -1,54 +1,55 @@
-# ==================================================================================================
+# Based on maratori's golden config (MIT, Copyright (c) 2021-2025 Marat Reymers):
+#   https://github.com/maratori/golangci-lint-config
+# Tuned for this template's conventions in .github/instructions/golang/*.md.
 #
-#                                              NOTICE
-#
-#                     This gist is no longer maintained. It was moved to repo:
-#
-#                         https://github.com/maratori/golangci-lint-config
-#
-#                     Full history and all v2 releases are preserved in the repo.
-#
-# ==================================================================================================
-
-
-
-# This file is licensed under the terms of the MIT license https://opensource.org/license/mit
-# Copyright (c) 2021-2025 Marat Reymers
-
-## Golden config for golangci-lint v2.7.1
-#
-# This is the best config for golangci-lint based on my experience and opinion.
-# It is very strict, but not extremely strict.
-# Feel free to adapt it to suit your needs.
-# If this config helps you, please consider keeping a link to this file (see the next comment).
-
-# Based on https://gist.github.com/maratori/47a4d00457a92aa426dbd48a18776322
+# Pinned to golangci-lint v2.14.0. Keep this in sync with:
+#   - .github/workflows/lint.yml          (golangci-lint-action `version`)
+#   - .devcontainer/Dockerfile            (GOLANGCI_LINT_VERSION)
 
 version: "2"
 
+run:
+  # Target Go version; must match go.mod. Without it, it's inferred and can differ between environments.
+  go: "1.27"
+  # Default: 0 (no timeout)
+  timeout: 5m
+  # Make paths in exclusions/depguard rules relative to go.mod, regardless of where lint is invoked from.
+  # Default: cfg
+  relative-path-mode: gomod
+
 issues:
-  # Maximum count of issues with the same text.
-  # Set to 0 to disable.
+  # Show every issue instead of silently truncating; CI output should reflect the real count.
+  # Default: 50
+  max-issues-per-linter: 0
   # Default: 3
-  max-same-issues: 50
+  max-same-issues: 0
 
 formatters:
   enable:
+    - gofumpt # stricter gofmt (superset); matches gopls `formatting.gofumpt` in .vscode/settings.json
     - goimports # checks if the code and import statements are formatted according to the 'goimports' command
     - golines # checks if code is formatted, and fixes long lines
-    - gofmt
 
     ## you may want to enable
     #- gci # checks if code and import statements are formatted, with additional rules
-    #- gofumpt # enforces a stricter format than 'gofmt', while being backwards compatible
     #- swaggo # formats swaggo comments
 
   # All settings can be found here https://github.com/golangci/golangci-lint/blob/HEAD/.golangci.reference.yml
   settings:
+    gofumpt:
+      extra:
+        # Groups function parameters with repeated types: `func f(a, b int)`.
+        # Default: false
+        group-params: true
+        # Multi-line calls whose opening paren ends a line must put the closing paren on its own line.
+        # Default: false
+        balance-calls: true
+
     goimports:
       # A list of prefixes, which, if set, checks import paths
       # with the given prefixes are grouped after 3rd-party packages.
       # Default: []
+      # NOTE: update together with the module path in go.mod when creating a repo from this template.
       local-prefixes:
         - github.com/davidbz/golang-template
 
@@ -86,18 +87,22 @@ linters:
     - gocognit # computes and checks the cognitive complexity of functions
     - goconst # finds repeated strings that could be replaced by a constant
     - gocritic # provides diagnostics that check for bugs, performance and style issues
-    - gocyclo # computes and checks the cyclomatic complexity of functions
     - godoclint # checks Golang's documentation practice
+    - dupword # checks for duplicate words in the source code
     - gomoddirectives # manages the use of 'replace', 'retract', and 'excludes' directives in go.mod
     - goprintffuncname # checks that printf-like functions are named with f at the end
     - gosec # inspects source code for security problems
     - govet # reports suspicious constructs, such as Printf calls whose arguments do not align with the format string
+    - inamedparam # reports interfaces with unnamed method parameters (keeps generated mocks readable)
+    - interfacebloat # checks the number of methods inside an interface
+    - ireturn # accept interfaces, return concrete types
     - iface # checks the incorrect use of interfaces, helping developers avoid interface pollution
     - ineffassign # detects when assignments to existing variables are not used
     - intrange # finds places where for loops could make use of an integer range
     - iotamixing # checks if iotas are being used in const blocks with other non-iota declarations
     - loggercheck # checks key value pairs for common logger libraries (kitlog,klog,logr,zap)
     - makezero # finds slice declarations with non-zero initial length
+    - misspell # finds commonly misspelled English words
     - mirror # reports wrong mirror patterns of bytes/strings usage
     - mnd # detects magic numbers
     - modernize # suggests simplifications to Go code, using modern language and library features
@@ -125,7 +130,8 @@ linters:
     - staticcheck # is a go vet on steroids, applying a ton of static analysis checks
     - testableexamples # checks if examples are testable (have an expected output)
     - testifylint # checks usage of github.com/stretchr/testify
-    - testpackage # makes you use a separate _test package
+    - testpackage # makes you use a separate _test package (use export_test.go to reach unexported code)
+    - thelper # detects test helpers without t.Helper() call and checks the consistency of test helpers
     - tparallel # detects inappropriate usage of t.Parallel() method in your Go test codes
     - unconvert # removes unnecessary type conversions
     - unparam # reports unused function parameters
@@ -135,9 +141,12 @@ linters:
     - usetesting # reports uses of functions with replacement inside the testing package
     - wastedassign # finds wasted assignment statements
     - whitespace # detects leading and trailing whitespace
-    - exhaustruct #checks if all structure fields are initialized
+    - exhaustruct_v5 # checks if all structure fields are initialized
     - wrapcheck # checks that errors returned from external packages are wrapped
     - containedctx # detects struct contained context.Context field
+
+    ## domain-specific: no-ops until you add the matching dependency, kept so they kick in automatically
+    # promlinter, protogetter, spancheck, sqlclosecheck, rowserrcheck, unqueryvet, loggercheck, musttag
 
     ## you may want to enable
     #- arangolint # opinionated best practices for arangodb client
@@ -145,9 +154,6 @@ linters:
     #- ginkgolinter # [if you use ginkgo/gomega] enforces standards of using ginkgo and gomega
     #- godox # detects usage of FIXME, TODO and other keywords inside comments
     #- goheader # checks is file header matches to pattern
-    #- inamedparam # [great idea, but too strict, need to ignore a lot of cases by default] reports interfaces with unnamed method parameters
-    #- interfacebloat # checks the number of methods inside an interface
-    #- ireturn # accept interfaces, return concrete types
     #- noinlineerr # disallows inline error handling `if err := ...; err != nil {`
     #- prealloc # [premature optimization, but can be used in some cases] finds slice declarations that could potentially be preallocated
     #- tagalign # checks that struct tags are well aligned
@@ -155,10 +161,10 @@ linters:
     #- zerologlint # detects the wrong usage of zerolog that a user forgets to dispatch zerolog.Event
 
     ## disabled
+    #- gocyclo # [duplicate of cyclop] computes and checks the cyclomatic complexity of functions
     #- godot # checks if comments end in a period
     #- contextcheck # [too many false positives] checks the function whether use a non-inherited context
     #- dogsled # checks assignments with too many blank identifiers (e.g. x, _, _, _, := f())
-    #- dupword # [useless without config] checks for duplicate words in the source code
     #- err113 # [too strict] checks the errors handling expressions
     #- errchkjson # [don't see profit + I'm against of omitting errors like in the first example https://github.com/breml/errchkjson] checks types passed to the json encoding functions. Reports unsupported types and optionally reports occasions, where the check for the returned error can be omitted
     #- forcetypeassert # [replaced by errcheck] finds forced type assertions
@@ -168,11 +174,9 @@ linters:
     #- importas # enforces consistent import aliases
     #- lll # [replaced by golines] reports long lines
     #- maintidx # measures the maintainability index of each function
-    #- misspell # [useless] finds commonly misspelled English words in comments
     #- nlreturn # [too strict and mostly code is not more readable] checks for a new line before return and branch statements to increase code clarity
     #- paralleltest # [too many false positives] detects missing usage of t.Parallel() method in your Go test
     #- tagliatelle # checks the struct tags
-    #- thelper # detects golang test helpers without t.Helper() call and checks the consistency of test helpers
     #- wsl # [too strict and mostly code is not more readable] whitespace linter forces you to use empty lines
     #- wsl_v5 # [too strict and mostly code is not more readable] add or remove empty lines
 
@@ -180,8 +184,9 @@ linters:
   settings:
     cyclop:
       # The maximal code complexity to report.
+      # The style guide mandates early returns and flat code; keep this tight.
       # Default: 10
-      max-complexity: 30
+      max-complexity: 15
       # The maximal average package complexity.
       # If it's higher than 0.0 (float) the check is enabled.
       # Default: 0.0
@@ -224,6 +229,28 @@ linters:
               desc: Use github.com/gofrs/uuid/v5 or later, it was not a go module before v5
             - pkg: github.com/gorilla/mux
               desc: Use the standard library net/http instead
+            - pkg: github.com/pkg/errors
+              desc: Use the standard library errors and fmt.Errorf with %w
+            - pkg: io/ioutil
+              desc: Use io and os instead, see https://go.dev/doc/go1.16#ioutil
+        "conventions":
+          files:
+            - "$all"
+          deny:
+            - pkg: github.com/golang/mock
+              desc: Use mockery-generated mocks (see .mockery.yaml)
+            - pkg: go.uber.org/mock
+              desc: Use mockery-generated mocks (see .mockery.yaml)
+            - pkg: go.uber.org/fx
+              desc: Use go.uber.org/dig for dependency injection
+        "config loading":
+          files:
+            - "!**/internal/config/**"
+          deny:
+            - pkg: github.com/joho/godotenv
+              desc: Only internal/config may load env files; receive config via DI
+            - pkg: github.com/caarlos0/env
+              desc: Only internal/config may parse env vars; receive config via DI
         "non-test files":
           files:
             - "!$test"
@@ -238,12 +265,15 @@ linters:
               desc: Use log/slog instead, see https://go.dev/blog/slog
         "logging":
           files:
-            - "$all"
+            # The logging abstraction itself is allowed to wrap a backend.
+            - "!**/internal/logging/**"
           deny:
             - pkg: go.uber.org/zap
-              desc: Use internal/observability logger abstraction instead of zap directly
+              desc: Use logging.FromContext(ctx) from internal/logging instead of zap directly
             - pkg: github.com/sirupsen/logrus
-              desc: Use internal/observability logger abstraction instead of logrus directly
+              desc: Use logging.FromContext(ctx) from internal/logging instead of logrus directly
+            - pkg: github.com/rs/zerolog
+              desc: Use logging.FromContext(ctx) from internal/logging instead of zerolog directly
 
     embeddedstructfieldcheck:
       # Checks that sync.Mutex and sync.RWMutex are not used as embedded fields.
@@ -263,38 +293,26 @@ linters:
         - switch
         - map
 
-    exhaustruct:
-      # List of regular expressions to match type names that should be excluded from processing.
-      # Anonymous structs can be matched by '<anonymous>' alias.
-      # Has precedence over `include`.
+    exhaustruct_v5:
+      # Expect to grow this list: third-party option structs are where this linter hurts most.
       # Each regular expression must match the full type name, including package path.
-      # For example, to match type `net/http.Cookie` regular expression should be `.*/http\.Cookie`,
-      # but not `http\.Cookie`.
       # Default: []
-      exclude:
+      ignore-patterns:
         # std libs
-        - ^net/http.Client$
-        - ^net/http.Cookie$
-        - ^net/http.Request$
-        - ^net/http.Response$
-        - ^net/http.Server$
-        - ^net/http.Transport$
-        - ^net/url.URL$
-        - ^os/exec.Cmd$
-        - ^reflect.StructField$
-        # public libs
-        - ^github.com/Shopify/sarama.Config$
-        - ^github.com/Shopify/sarama.ProducerMessage$
-        - ^github.com/mitchellh/mapstructure.DecoderConfig$
-        - ^github.com/prometheus/client_golang/.+Opts$
-        - ^github.com/spf13/cobra.Command$
-        - ^github.com/spf13/cobra.CompletionOptions$
-        - ^github.com/stretchr/testify/mock.Mock$
-        - ^github.com/testcontainers/testcontainers-go.+Request$
-        - ^github.com/testcontainers/testcontainers-go.FromDockerfile$
-        - ^golang.org/x/tools/go/analysis.Analyzer$
-        - ^google.golang.org/protobuf/.+Options$
-        - ^gopkg.in/yaml.v3.Node$
+        - ^crypto/tls\.Config$
+        - ^log/slog\.HandlerOptions$
+        - ^net/http\.Client$
+        - ^net/http\.Cookie$
+        - ^net/http\.Request$
+        - ^net/http\.Response$
+        - ^net/http\.Server$
+        - ^net/http\.Transport$
+        - ^net/url\.URL$
+        - ^os/exec\.Cmd$
+        - ^reflect\.StructField$
+        # public libs used by this template's conventions
+        - ^github\.com/stretchr/testify/mock\.Mock$
+        - ^go\.uber\.org/dig\.(In|Out)$
       # Allows empty structures in return statements.
       # Default: false
       allow-empty-returns: true
@@ -308,11 +326,11 @@ linters:
       # Checks the number of lines in a function.
       # If lower than 0, disable the check.
       # Default: 60
-      lines: 100
+      lines: 80
       # Checks the number of statements in a function.
       # If lower than 0, disable the check.
       # Default: 40
-      statements: 50
+      statements: 40
 
     gochecksumtype:
       # Presence of `default` case in switch statements satisfies exhaustiveness, if all members are not listed.
@@ -322,9 +340,36 @@ linters:
     gocognit:
       # Minimal code complexity to report.
       # Default: 30 (but we recommend 10-20)
-      min-complexity: 20
+      min-complexity: 15
+
+    forbidigo:
+      # Use type information so patterns match the real package, regardless of import aliases.
+      # Default: false
+      analyze-types: true
+      forbid:
+        - pattern: ^print(ln)?$
+          msg: Use the context logger (logging.FromContext)
+        - pattern: ^fmt\.Print.*$
+          msg: Use the context logger (logging.FromContext)
+        - pattern: ^os\.(Getenv|LookupEnv|Environ)$
+          msg: Read configuration in internal/config and receive it via DI
+        - pattern: ^context\.TODO$
+          msg: Accept a context.Context parameter instead
+        - pattern: ^panic$
+          msg: Return an error instead (see architecture.md "Don't Panic!"); panic is only allowed in main.go
 
     gocritic:
+      # Enable multiple checks by tags in addition to default checks.
+      # Run `golangci-lint run --enable-only=gocritic --show-stats` / see https://go-critic.com/overview.
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - hugeParam # config structs are passed by value on purpose (static, read-only)
+        - paramTypeCombine # purely cosmetic
+        - unnamedResult # conflicts with nonamedreturns
+        - whyNoLint # covered by nolintlint
       # Settings passed to gocritic.
       # The settings key is the name of a supported gocritic checker.
       # The list of supported checkers can be found at https://go-critic.com/overview.
@@ -358,14 +403,20 @@ linters:
       # Settings per analyzer.
       settings:
         shadow:
-          # Whether to be strict about shadowing; can be noisy.
+          # Strict mode flags the idiomatic `if err := f(); err != nil` whenever an outer `err` exists,
+          # which coding-style.md prescribes. Non-strict still catches shadows that are used afterwards.
           # Default: false
-          strict: true
+          strict: false
 
     inamedparam:
       # Skips check for interface methods with only a single parameter.
       # Default: false
       skip-single-param: true
+
+    interfacebloat:
+      # Small, focused interfaces are injected via DI and mocked with mockery.
+      # Default: 10
+      max: 7
 
     mnd:
       # List of function patterns to exclude from analysis.
@@ -395,7 +446,7 @@ linters:
     nolintlint:
       # Exclude following linters from requiring an explanation.
       # Default: []
-      allow-no-explanation: [ funlen, gocognit, golines ]
+      allow-no-explanation: [ cyclop, funlen, gocognit, golines ]
       # Enable to require an explanation of nonzero length after each nolint directive.
       # Default: false
       require-explanation: true
@@ -415,11 +466,22 @@ linters:
       patterns:
         - ".*"
 
-    rowserrcheck:
-      # database/sql is always checked.
-      # Default: []
-      packages:
-        - github.com/jmoiron/sqlx
+    nestif:
+      # Default: 5
+      min-complexity: 4
+
+    revive:
+      # Keep revive's default rules, and add the ones below on top.
+      # Default: false
+      enable-default-rules: true
+      rules:
+        - name: context-as-argument # coding-style.md: ctx is always the first argument
+        - name: early-return # coding-style.md: return early
+        - name: confusing-results
+        - name: defer
+        - name: import-shadowing
+        - name: unused-receiver
+        - name: use-any
 
     sloglint:
       # Enforce not using global loggers.
@@ -438,6 +500,15 @@ linters:
       # https://github.com/go-simpler/sloglint?tab=readme-ov-file#context-only
       # Default: ""
       context: scope
+      # Report dynamic log messages, such as those built with fmt.Sprintf; put variables in attributes.
+      # Default: false
+      static-msg: true
+      # Report any use of attributes as function call arguments; the docs use key-value pairs.
+      # Default: false
+      kv-only: true
+      # Report log keys that do not match a particular naming case (docs use `order_id`, `user_id`).
+      # Default: ""
+      key-naming-case: snake
 
     staticcheck:
       # SAxxxx checks in https://staticcheck.dev/docs/configuration/options/#checks
@@ -459,6 +530,11 @@ linters:
       # Enable/disable `os.TempDir()` detections.
       # Default: false
       os-temp-dir: true
+      # Enable/disable `context.Background()` / `context.TODO()` detections (prefer t.Context()).
+      # Default: false
+      context-background: true
+      # Default: false
+      context-todo: true
 
   exclusions:
     # Log a warning if an exclusion rule is unused.
@@ -471,8 +547,6 @@ linters:
       - common-false-positives
     # Excluding configuration per-path, per-linter, per-text and per-source.
     rules:
-      - source: 'TODO'
-        linters: [ godot ]
       - text: 'should have a package comment'
         linters: [ revive ]
       - text: 'exported \S+ \S+ should have comment( \(or a comment on this block\))? or be unexported'
@@ -483,14 +557,26 @@ linters:
       - text: 'comment on exported \S+ \S+ should be of the form ".+"'
         source: '// ?(nolint|TODO)'
         linters: [ revive, staticcheck ]
+      # errcheck stays on in tests: an unchecked error in a test is usually a silently broken test.
       - path: '_test\.go'
         linters:
           - bodyclose
           - dupl
-          - errcheck
-          - exhaustruct
+          - exhaustruct_v5
           - funlen
           - goconst
           - gosec
+          - mnd
           - noctx
           - wrapcheck
+      # export_test.go re-exports unexported identifiers to the black-box _test package (see testing.md).
+      - path: 'export_test\.go$'
+        linters: [ gochecknoglobals ]
+      # Configuration is the one place allowed to read the environment.
+      - path: 'internal/config/'
+        text: 'os\.(Getenv|LookupEnv|Environ)'
+        linters: [ forbidigo ]
+      # main.go is the composition root: failing to build the DI container is unrecoverable.
+      - path: '(^|/)main\.go$'
+        text: '^use of `panic` forbidden'
+        linters: [ forbidigo ]

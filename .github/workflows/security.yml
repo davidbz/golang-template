@@ -1,42 +1,51 @@
 name: security
+
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: "17 4 * * 1" # weekly: catch newly published vulnerabilities in unchanged code
 
-permissions:
-  contents: read
-  security-events: write
-  actions: read
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   trufflehog:
+    name: secret scan
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
-    name: Secret Scan
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: TruffleHog OSS
-        uses: trufflesecurity/trufflehog@v3.97.9
+      - uses: trufflesecurity/trufflehog@4dd8831c5f12599465d4d45c3c447b4018a34c85 # v3.97.9
         with:
-          path: ./
-          base: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || 'HEAD~1' }}
-          head: HEAD
-          extra_args: --debug --results=verified,unknown
+          extra_args: --results=verified,unknown
 
-  gosec:
+  govulncheck:
+    name: govulncheck
     runs-on: ubuntu-latest
-    name: Golang Security Scan
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Run Gosec Security Scanner
-        uses: securego/gosec@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Scan the entire repo recursively
-          args: ./...
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          check-latest: true # vulnerabilities in the standard library are fixed by toolchain patch releases
+
+      - run: make vuln

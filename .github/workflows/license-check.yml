@@ -1,155 +1,39 @@
-name: License Check
+name: license-check
 
 on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: read
-  pull-requests: write  # For commenting on PRs
+permissions: {}
 
 jobs:
-  check-licenses:
-    name: Check Dependency Licenses
+  go-licenses:
+    name: dependency licenses
     runs-on: ubuntu-latest
-
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version-file: 'go.mod'
-          cache: true
+          persist-credentials: false
 
-      - name: Install go-licenses
-        run: go install github.com/google/go-licenses@latest
-
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Check for restricted licenses
-        run: |
-          echo "Checking for restricted licenses..."
-
-          # List of prohibited licenses (case-insensitive patterns)
-          RESTRICTED_LICENSES=(
-            "AGPL"
-            "GPL-2.0"
-            "GPL-3.0"
-            "LGPL-2.0"
-            "LGPL-2.1"
-            "LGPL-3.0"
-            "SSPL"
-            "Commons-Clause"
-            "BUSL"
-          )
-
-          # Get all licenses from dependencies
-          echo "Scanning all dependencies for licenses..."
-          go-licenses report ./... 2>&1 | tee licenses.txt || true
-
-          # Check for restricted licenses
-          FOUND_RESTRICTED=false
-          for license in "${RESTRICTED_LICENSES[@]}"; do
-            if grep -i "$license" licenses.txt; then
-              echo "❌ ERROR: Found restricted license: $license"
-              FOUND_RESTRICTED=true
-            fi
-          done
-
-          if [ "$FOUND_RESTRICTED" = true ]; then
-            echo ""
-            echo "=========================================="
-            echo "❌ RESTRICTED LICENSES DETECTED"
-            echo "=========================================="
-            echo "The following restricted licenses were found in dependencies:"
-            echo ""
-            cat licenses.txt | grep -iE "$(IFS="|"; echo "${RESTRICTED_LICENSES[*]}")" || true
-            echo ""
-            echo "Please remove dependencies with these licenses or seek legal approval."
-            exit 1
-          fi
-
-          echo ""
-          echo "✅ No restricted licenses found!"
-
-      - name: Comment on PR (if violations found)
-        if: failure() && github.event_name == 'pull_request'
-        uses: actions/github-script@v9
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          script: |
-            const fs = require('fs');
-            let licenses = '';
-            try {
-              licenses = fs.readFileSync('licenses.txt', 'utf8');
-            } catch (e) {
-              console.log('Could not read licenses.txt');
-              return;
-            }
+          go-version-file: go.mod
 
-            const restrictedLicenses = ['AGPL', 'GPL-2.0', 'GPL-3.0', 'LGPL-2.0', 'LGPL-2.1', 'LGPL-3.0', 'SSPL', 'Commons-Clause', 'BUSL'];
+      # Fails on licenses classified as forbidden (e.g. AGPL, SSPL, BUSL) or restricted (GPL, LGPL).
+      # Tune DISALLOWED_LICENSES in the Makefile.
+      - name: Check licenses
+        run: make licenses
 
-            let violations = '';
-            for (const license of restrictedLicenses) {
-              const regex = new RegExp(license, 'i');
-              const matches = licenses.split('\n').filter(line => regex.test(line));
-              if (matches.length > 0) {
-                violations += matches.join('\n') + '\n';
-              }
-            }
-
-            if (!violations) {
-              return;
-            }
-
-            const body = `## ❌ License Check Failed
-
-            This PR cannot be merged because restricted licenses were detected in dependencies.
-
-            ### Restricted Licenses Found:
-            \`\`\`
-            ${violations}
-            \`\`\`
-
-            ### Blocked License Types:
-            - AGPL (all versions)
-            - GPL-2.0, GPL-3.0
-            - LGPL-2.0, LGPL-2.1, LGPL-3.0
-            - SSPL (Server Side Public License)
-            - Commons Clause
-            - BUSL (Business Source License)
-
-            **Action Required:** Please remove or replace the dependencies with restricted licenses before this PR can be merged.`;
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
-
-      - name: Generate license report
-        if: success()
-        run: |
-          echo "Generating detailed license report..."
-          echo "# License Report" > license-report.md
-          echo "" >> license-report.md
-          echo "Generated on: $(date)" >> license-report.md
-          echo "" >> license-report.md
-          echo "## All Dependency Licenses" >> license-report.md
-          echo "" >> license-report.md
-          echo '```' >> license-report.md
-          cat licenses.txt >> license-report.md
-          echo '```' >> license-report.md
-
-      - name: Upload license report
+      - name: License report
         if: always()
-        uses: actions/upload-artifact@v7
+        run: go tool go-licenses report ./... > licenses.csv
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
         with:
           name: license-report
-          path: |
-            licenses.txt
-            license-report.md
+          path: licenses.csv
           retention-days: 30
