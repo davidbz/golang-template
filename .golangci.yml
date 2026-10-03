@@ -10,7 +10,7 @@ version: "2"
 
 run:
   # Target Go version; must match go.mod. Without it, it's inferred and can differ between environments.
-  go: "1.25"
+  go: "1.27"
   # Default: 0 (no timeout)
   timeout: 5m
   # Make paths in exclusions/depguard rules relative to go.mod, regardless of where lint is invoked from.

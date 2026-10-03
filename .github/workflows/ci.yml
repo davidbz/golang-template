@@ -1,45 +1,61 @@
-name: CI
+name: ci
 
 on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-and-test:
+    name: build & test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version: '1.25.x'
-          cache: true
-          cache-dependency-path: |
-            **/go.sum
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: go.mod is tidy
+        run: make tidy-check
+
+      - name: Mocks are up to date
+        run: make mocks-check
 
       - name: Build
         run: make build
 
-      - name: Test with Coverage
+      - name: Test with coverage
         run: make test-coverage
 
-      - name: Coverage Summary
-        run: go tool cover -func=coverage.out | tail -n 1 || true
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v7
+      - name: Upload coverage
+        if: hashFiles('coverage.out') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage
           path: coverage.out
-          if-no-files-found: error
+
+  docker:
+    name: docker build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        if: hashFiles('cmd/app/*.go') != ''
+        run: make docker

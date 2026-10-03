@@ -1,91 +1,117 @@
-.PHONY: build test run clean help mocks mocks-clean mocks-regen test-coverage test-coverage-html deps fmt lint lint-fix
+.DEFAULT_GOAL := help
 
-# Build the app binary
-build:
-	@echo "Building..."
-	@go build -o bin/app ./cmd/
-	@echo "Build complete: bin/app"
+# Main package to build/run. With several binaries, use cmd/<name>/ and override: `make build CMD=./cmd/worker BIN=bin/worker`.
+CMD ?= ./cmd/app
+BIN ?= bin/app
+IMAGE ?= $(notdir $(CURDIR)):dev
 
-# Generate mocks
-mocks:
-	@echo "Generating mocks..."
-	@mockery --config .mockery.yaml
-	@echo "Mocks generated successfully"
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -s -w -X main.version=$(VERSION)
+TEST_FLAGS := -race -shuffle=on -count=1 -timeout=5m
 
-# Clean generated mocks
-mocks-clean:
-	@echo "Cleaning mocks..."
+# Packages in this module; empty until the first .go file exists, so targets below skip instead of failing.
+PKGS := $(shell go list ./... 2>/dev/null)
+DISALLOWED_LICENSES := forbidden,restricted
+
+.PHONY: help build run test test-coverage test-coverage-html mocks mocks-clean mocks-regen mocks-check \
+	fmt lint lint-fix vuln licenses tidy tidy-check deps docker release-snapshot ci clean
+
+help: ## Show this help
+	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+##@ Build
+
+build: ## Build CMD (default ./cmd/app) into BIN (default bin/app)
+	@if [ -z "$$(go list $(CMD) 2>/dev/null)" ]; then echo "No main package at $(CMD); skipping build"; exit 0; fi; \
+	CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o $(BIN) $(CMD) && echo "Built $(BIN)"
+
+run: ## Run CMD
+	@go run $(CMD)
+
+docker: ## Build the container image (IMAGE, default <dir>:dev)
+	@docker build --build-arg CMD=$(CMD) --build-arg VERSION=$(VERSION) -t $(IMAGE) .
+
+release-snapshot: ## Build a local GoReleaser snapshot into dist/ (requires goreleaser)
+	@goreleaser release --snapshot --clean
+
+##@ Test
+
+test: mocks ## Run tests with the race detector and shuffled order
+ifeq ($(PKGS),)
+	@echo "No Go packages yet; skipping tests"
+else
+	@go test $(TEST_FLAGS) ./...
+endif
+
+test-coverage: ## Run tests with coverage into coverage.out
+ifeq ($(PKGS),)
+	@echo "No Go packages yet; skipping tests"
+else
+	@go test $(TEST_FLAGS) -covermode=atomic -coverprofile=coverage.out ./...
+	@go tool cover -func=coverage.out | tail -n 1
+endif
+
+test-coverage-html: test-coverage ## Render coverage.out to coverage.html
+	@[ ! -f coverage.out ] || go tool cover -html=coverage.out -o coverage.html
+
+##@ Mocks
+
+mocks: ## Generate mocks from interfaces registered in .mockery.yaml
+	@if grep -qE '^  [^ #]' .mockery.yaml; then go tool mockery; else echo "No packages in .mockery.yaml; skipping mocks"; fi
+
+mocks-clean: ## Remove generated mocks
 	@rm -rf internal/mocks
-	@echo "Mocks cleaned"
 
-# Regenerate mocks (clean + generate)
-mocks-regen: mocks-clean mocks
-	@echo "Mocks regenerated"
+mocks-regen: mocks-clean mocks ## Clean and regenerate all mocks
 
-# Run all tests (generates mocks first)
-test: mocks
-	@echo "Running tests..."
-	@go test -v ./...
+mocks-check: mocks-regen ## Fail if committed mocks are stale
+	@if ! git diff --quiet -- internal/mocks || [ -n "$$(git ls-files --others --exclude-standard -- internal/mocks)" ]; then \
+		git status --short -- internal/mocks; echo "Mocks are stale; run 'make mocks-regen' and commit"; exit 1; \
+	fi
 
-# Run tests with coverage (for CI)
-test-coverage:
-	@echo "Running tests with coverage..."
-	@go test ./... -race -covermode=atomic -coverprofile=coverage.out -timeout=5m
-	@echo "Coverage report generated: coverage.out"
+##@ Quality
 
-# Run tests with coverage and generate HTML report (for local development)
-test-coverage-html: test-coverage
-	@echo "Generating HTML coverage report..."
-	@go tool cover -html=coverage.out -o coverage.html
-	@echo "HTML coverage report generated: coverage.html"
+fmt: ## Format code with the formatters configured in .golangci.yml
+ifeq ($(PKGS),)
+	@echo "No Go packages yet; skipping fmt"
+else
+	@golangci-lint fmt
+endif
 
-# Run the app
-run:
-	@echo "Starting..."
-	@go run ./cmd/
+lint: ## Lint code (requires golangci-lint)
+ifeq ($(PKGS),)
+	@echo "No Go packages yet; skipping lint"
+else
+	@golangci-lint run
+endif
 
-# Clean build artifacts
-clean:
-	@echo "Cleaning..."
-	@rm -rf bin/
-	@rm -f coverage.out coverage.html
-	@echo "Clean complete"
+lint-fix: ## Lint code and apply auto-fixes
+ifeq ($(PKGS),)
+	@echo "No Go packages yet; skipping lint-fix"
+else
+	@golangci-lint run --fix
+endif
 
-# Install dependencies
-deps:
-	@echo "Installing dependencies..."
-	@go mod download
+vuln: ## Scan for known vulnerabilities (govulncheck)
+ifeq ($(PKGS),)
+	@echo "No Go packages yet; skipping govulncheck"
+else
+	@go tool govulncheck ./...
+endif
+
+licenses: ## Fail on dependencies with disallowed licenses
+	@go tool go-licenses check ./... --disallowed_types=$(DISALLOWED_LICENSES)
+
+tidy: ## Tidy go.mod/go.sum
 	@go mod tidy
 
-# Format code with the formatters configured in .golangci.yml (gofumpt, goimports, golines)
-fmt:
-	@echo "Formatting code..."
-	@golangci-lint fmt
+tidy-check: ## Fail if go.mod/go.sum are not tidy
+	@go mod tidy -diff
 
-# Lint code (requires golangci-lint)
-lint:
-	@echo "Linting code..."
-	@golangci-lint run
+deps: ## Download dependencies
+	@go mod download
 
-# Lint code and apply auto-fixes where available
-lint-fix:
-	@echo "Linting code with auto-fix..."
-	@golangci-lint run --fix
+ci: lint tidy-check mocks-check build test-coverage vuln licenses ## Run every CI check locally
 
-# Help
-help:
-	@echo "Available targets:"
-	@echo "  build              - Build the app binary"
-	@echo "  test               - Run all tests (generates mocks first)"
-	@echo "  test-coverage      - Run tests with coverage (for CI)"
-	@echo "  test-coverage-html - Run tests with coverage and generate HTML report"
-	@echo "  run                - Run the app"
-	@echo "  clean              - Clean build artifacts"
-	@echo "  deps               - Install dependencies"
-	@echo "  fmt                - Format code (requires golangci-lint)"
-	@echo "  lint               - Lint code (requires golangci-lint)"
-	@echo "  lint-fix           - Lint code and apply auto-fixes"
-	@echo "  mocks              - Generate mocks from interfaces"
-	@echo "  mocks-clean        - Remove generated mocks"
-	@echo "  mocks-regen        - Clean and regenerate all mocks"
-	@echo "  help               - Show this help message"
+clean: ## Remove build artifacts
+	@rm -rf bin/ dist/ coverage.out coverage.html
