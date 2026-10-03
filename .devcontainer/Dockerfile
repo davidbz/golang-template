@@ -46,8 +46,6 @@ RUN apt-get update && apt-get install -y \
     apt-get clean autoclean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code CLI
-RUN su vscode -c "curl -fsSL https://claude.ai/install.sh | bash"
 
 # Set up bash completion for Go tools
 RUN echo 'source /usr/share/bash-completion/bash_completion' >> /home/vscode/.bashrc
