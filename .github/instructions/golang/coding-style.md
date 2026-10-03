@@ -238,7 +238,7 @@ type SQLUserRepository struct {
 
 func (r *SQLUserRepository) GetByID(ctx context.Context, id string) (*User, error) {
 	// Use ctx for query timeouts, cancellation
-	row := r.db.QueryRowContext(ctx, "SELECT * FROM users WHERE id = ?", id)
+	row := r.db.QueryRowContext(ctx, "SELECT id, email, role FROM users WHERE id = ?", id) // explicit columns (unqueryvet)
 	// ... rest of implementation
 }
 ```

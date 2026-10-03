@@ -1,4 +1,4 @@
-.PHONY: build test run clean help mocks mocks-clean mocks-regen test-coverage test-coverage-html deps fmt lint
+.PHONY: build test run clean help mocks mocks-clean mocks-regen test-coverage test-coverage-html deps fmt lint lint-fix
 
 # Build the app binary
 build:
@@ -57,15 +57,20 @@ deps:
 	@go mod download
 	@go mod tidy
 
-# Format code
+# Format code with the formatters configured in .golangci.yml (gofumpt, goimports, golines)
 fmt:
 	@echo "Formatting code..."
-	@go fmt ./...
+	@golangci-lint fmt
 
 # Lint code (requires golangci-lint)
 lint:
 	@echo "Linting code..."
 	@golangci-lint run
+
+# Lint code and apply auto-fixes where available
+lint-fix:
+	@echo "Linting code with auto-fix..."
+	@golangci-lint run --fix
 
 # Help
 help:
@@ -77,8 +82,9 @@ help:
 	@echo "  run                - Run the app"
 	@echo "  clean              - Clean build artifacts"
 	@echo "  deps               - Install dependencies"
-	@echo "  fmt                - Format code"
+	@echo "  fmt                - Format code (requires golangci-lint)"
 	@echo "  lint               - Lint code (requires golangci-lint)"
+	@echo "  lint-fix           - Lint code and apply auto-fixes"
 	@echo "  mocks              - Generate mocks from interfaces"
 	@echo "  mocks-clean        - Remove generated mocks"
 	@echo "  mocks-regen        - Clean and regenerate all mocks"
