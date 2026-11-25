@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: trufflesecurity/trufflehog@4dd8831c5f12599465d4d45c3c447b4018a34c85 # v3.97.9
+      - uses: trufflesecurity/trufflehog@3bd2b5887eb0efb8fa18bfd1d296032924e4ffdc # v3.99.9
         with:
           extra_args: --results=verified,unknown
 
@@ -43,7 +43,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
           check-latest: true # vulnerabilities in the standard library are fixed by toolchain patch releases
